@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wedding planning timeline calculator: dated checklist from your wedding date</title>
+<meta name="description" content="Free wedding planning timeline calculator: enter your wedding date and the day you start planning. It dates every task, squeezes the timeline in order when your engagement is shorter than 12 months, flags what is already tight, and exports the checklist to your calendar (.ics) or a spreadsheet (CSV). Runs in your browser.">
+<style>
+:root{--ink:#1d1a24;--paper:#f3efe6;--navy:#23395b;--rust:#b2542b;--rule:#d8d0bd}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 Georgia,"Iowan Old Style",serif}
+main{max-width:800px;margin:0 auto;padding:36px 18px 60px}
+h1{font-size:1.9rem;line-height:1.15;margin:0 0 .4em;color:var(--navy)}
+h2{font-size:1.2rem;margin:1.8em 0 .5em;color:var(--navy)}
+a{color:var(--navy)}
+.box{background:#fff;border:1px solid var(--rule);border-radius:8px;padding:14px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:12px}
+.row label{font-size:.85rem;display:flex;flex-direction:column;gap:3px;min-width:0}
+input,select{font:inherit;padding:7px;border:1px solid var(--rule);border-radius:5px;background:#fff;width:100%;min-width:0}
+.dl{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}
+.dl button{font:inherit;font-weight:bold;padding:9px 14px;border:2px solid var(--navy);border-radius:6px;background:#fff;color:var(--navy);cursor:pointer}
+.dl button.main{background:var(--navy);color:#fff}
+.sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:16px 0}
+.sum div{background:#fff;border-top:4px solid var(--rust);padding:10px 14px;border-radius:4px}
+.sum b{display:block;font-size:1.2rem;color:var(--navy)}
+.warn{background:#fbe9e1;border-left:4px solid var(--rust);padding:8px 12px;border-radius:4px;margin:10px 0}
+.res{width:100%;border-collapse:collapse;background:#fff;font-size:.93rem}
+.res th,.res td{border-bottom:1px solid var(--rule);padding:6px 8px;text-align:left;vertical-align:top}
+.res td.d{white-space:nowrap}
+.res tr.g td{background:#eef3f8;font-weight:bold;color:var(--navy)}
+.tag{display:inline-block;font-size:.75rem;padding:0 6px;border-radius:3px;background:#fbe9e1;color:var(--rust);margin-left:4px}
+.scroll{overflow-x:auto}
+small{color:#5f5a66}
+@media(max-width:620px){.res{font-size:.85rem}.res th,.res td{padding:5px 4px}}
+@media print{.box,.dl,.noprint{display:none}body{background:#fff}}
+</style>
+</head>
+<body>
+<main>
+<h1>Wedding planning timeline calculator</h1>
+<p>Most wedding checklists assume a 12-month engagement. Enter your own wedding date and the day you start: every task gets a real date. If you have less than a year, the timeline is squeezed in the same order instead of leaving the first months of the list overdue, and tasks that are already tight are flagged so you book them first.</p>
+<div class="box">
+<div class="row">
+<label>Wedding date<input id="wed" type="date"></label>
+<label>Start planning on<input id="start" type="date"></label>
+<label>Tasks dated in the past<select id="mode"><option value="squeeze">Squeeze the timeline to fit</option><option value="catch">Keep ideal dates, move late ones to the start</option></select></label>
+</div>
+<div class="dl"><button class="main" id="ics" type="button">Add to calendar (.ics)</button><button id="csv" type="button">Spreadsheet (CSV)</button><button id="prn" type="button">Print</button></div>
+<small>Calendar file: one all-day event per task on its date, works with Google Calendar, Apple Calendar and Outlook (import). Nothing is sent anywhere, the page runs in your browser.</small>
+</div>
+<div id="out"></div>
+<h2 class="noprint">How the dates are set</h2>
+<div class="noprint">
+<p>Each task has two lead times: the usual one (how long before the wedding couples typically do it, for example 12 months for the venue) and the latest sensible one (for example 6 weeks for mailing invitations). These are common planning conventions, not data from a survey: popular venues, photographers and caterers often book a year ahead in peak season, much less off-season.</p>
+<p><b>Squeeze</b> (default): when you have less time than the longest lead time, every usual lead time is scaled down by the same ratio, so the order stays the same, but no task is moved later than its latest sensible date. <b>Keep ideal dates</b>: tasks whose usual date has passed are all put on your start date and marked late, the rest keep the classic dates.</p>
+<p>A task is flagged <span class="tag">tight</span> when your start date is already past its latest sensible date: do it in the first days, and expect fewer choices.</p>
+<p>Want it on paper, with a budget sheet, vendor contacts, a guest list with RSVP and a day-of timeline? The <a href="https://tidysheets.shop/p/wedding-planner-checklist-printable">printable wedding planner checklist</a> has the same 12-month order in 6 pages (US Letter and A4).</p>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const DAY=86400000;
+const ymd=d=>d.toISOString().slice(0,10);
+const parse=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(Date.UTC(y,m-1,d))};
+const nice=d=>d.toLocaleDateString('en-US',{timeZone:'UTC',weekday:'short',month:'short',day:'numeric',year:'numeric'});
+// [task, usual days before, latest days before]; negative = after the wedding
+const TASKS=[
+['Set the overall budget and who contributes',365,240],
+['Draft the guest list (rough head count)',360,200],
+['Choose the wedding party',340,150],
+['Book the ceremony and reception venue',330,120],
+['Book the officiant',300,90],
+['Book the photographer',300,90],
+['Book the caterer (if the venue does not cater)',280,90],
+['Book the band or DJ',270,75],
+['Book the videographer',270,75],
+['Start shopping for the wedding dress or attire',270,120],
+['Send save-the-dates',240,120],
+['Book the florist',240,60],
+['Reserve hotel room blocks for guests',240,60],
+['Set up the wedding website',240,90],
+['Book hair and makeup',210,45],
+['Register for gifts',210,60],
+['Book transportation',180,30],
+['Order the cake',180,30],
+['Order invitations and stationery',150,60],
+['Plan the rehearsal dinner',150,30],
+['Buy wedding rings',120,30],
+['Book the honeymoon',120,30],
+['Choose the wedding party attire',120,45],
+['Mail the invitations',56,42],
+['First dress or suit fitting',90,30],
+['Check the marriage license rules for your county',90,30],
+['Plan the ceremony and choose readings',75,21],
+['Confirm the menu and do the tasting',60,21],
+['Write the day-of timeline and share it with vendors',45,10],
+['Apply for the marriage license',30,3],
+['RSVP deadline: chase the missing answers',30,14],
+['Final dress or suit fitting',21,7],
+['Give the final head count to the caterer and venue',14,5],
+['Make the seating chart',14,3],
+['Pay final balances and prepare vendor tips',7,2],
+['Confirm arrival times with every vendor',7,2],
+['Pack for the honeymoon',5,1],
+['Rehearsal and rehearsal dinner',1,1],
+['Wedding day',0,0],
+['Send thank-you notes',-60,-60],
+['Change your name on documents (if you are changing it)',-30,-30]];
+const MAXI=Math.max(...TASKS.map(t=>t[1]));
+function plan(wed,start,mode){
+ const A=Math.round((wed-start)/DAY);const s=Math.min(1,Math.max(0,A)/MAXI);
+ const out=TASKS.map(([name,I,M],i)=>{let off,late=false,tight=false;
+  if(I<=0){off=I}
+  else if(mode==='squeeze'){off=Math.round(Math.max(M,I*s));if(off>A){off=Math.max(A,0);tight=true}}
+  else{off=I;if(off>A){off=Math.max(A,0);late=true;if(M>A)tight=true}}
+  if(I>0&&M>A)tight=true;
+  return{name,i,I,M,date:new Date(wed.getTime()-off*DAY),late,tight}});
+ out.sort((a,b)=>a.date-b.date||a.i-b.i);return{A,s,tasks:out}}
+const T0=new Date(),T=new Date(Date.UTC(T0.getFullYear(),T0.getMonth(),T0.getDate()));
+let last=null;
+function run(){if(!$('wed').value||!$('start').value)return;const wed=parse($('wed').value),start=parse($('start').value);
+ if(wed<=start){$('out').innerHTML='<div class="warn">The wedding date has to be after the start date.</div>';last=null;return}
+ const p=plan(wed,start,$('mode').value);last={p,wed};
+ const tight=p.tasks.filter(t=>t.tight).length,late=p.tasks.filter(t=>t.late).length;
+ const months=(p.A/30.44).toFixed(1);
+ let h=`<div class="sum"><div>Time to plan<b>${p.A} days</b><small>about ${months} months</small></div><div>Timeline scale<b>${$('mode').value==='squeeze'?Math.round(p.s*100)+' %':'classic dates'}</b><small>${p.s>=1?'you have a full 12 months or more':'of the usual 12-month lead times'}</small></div><div>Tight tasks<b>${tight}</b><small>start date already past their latest sensible date</small></div></div>`;
+ if(p.A<120)h+=`<div class="warn">Less than 4 months: book the venue, officiant, photographer and caterer this week, and ask vendors about weekday or off-season dates, which are often still open.</div>`;
+ if(late)h+=`<div class="warn">${late} tasks had a classic date before your start date. They are on ${nice(start)} and marked late.</div>`;
+ let cur='';h+=`<div class="scroll"><table class="res"><tr><th>Date</th><th>Task</th></tr>`;
+ for(const t of p.tasks){const m=t.date.toLocaleDateString('en-US',{timeZone:'UTC',month:'long',year:'numeric'});if(m!==cur){cur=m;h+=`<tr class="g"><td colspan="2">${m}</td></tr>`}
+  h+=`<tr><td class="d">${nice(t.date)}</td><td>${t.name}${t.tight?'<span class="tag">tight</span>':''}${t.late?'<span class="tag">late</span>':''}</td></tr>`}
+ h+=`</table></div>`;$('out').innerHTML=h}
+function esc(s){return s.replace(/\\/g,'\\\\').replace(/;/g,'\;').replace(/,/g,'\\,')}
+function fold(l){const o=[];let b=new TextEncoder().encode(l);if(b.length<=75)return l;let s='',n=0;for(const ch of l){const k=new TextEncoder().encode(ch).length;if(n+k>(o.length?74:75)){o.push(s);s='';n=0}s+=ch;n+=k}o.push(s);return o.join('\r\n ')}
+function ics(){if(!last)return;const st=new Date().toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//ricco020//wedding-planning-timeline//EN','CALSCALE:GREGORIAN','X-WR-CALNAME:Wedding planning'];
+ last.p.tasks.forEach((t,i)=>{const d=ymd(t.date).replace(/-/g,''),e=ymd(new Date(t.date.getTime()+DAY)).replace(/-/g,'');
+  L.push('BEGIN:VEVENT','UID:wedding-'+ymd(last.wed)+'-'+t.i+'@ricco020.github.io','DTSTAMP:'+st,'DTSTART;VALUE=DATE:'+d,'DTEND;VALUE=DATE:'+e,fold('SUMMARY:'+esc((t.tight?'[tight] ':'')+t.name)),'TRANSP:TRANSPARENT','END:VEVENT')});
+ L.push('END:VCALENDAR');dl(L.join('\r\n')+'\r\n','wedding-planning.ics','text/calendar')}
+function dl(txt,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type}));a.download=name;a.click()}
+$('ics').onclick=ics;
+$('csv').onclick=()=>{if(!last)return;const q=s=>'"'+String(s).replace(/"/g,'""')+'"';const L=['Date,Task,Status,Done'];for(const t of last.p.tasks)L.push([ymd(t.date),q(t.name),t.tight?'tight':(t.late?'late':''),''].join(','));dl(L.join('\r\n'),'wedding-planning.csv','text/csv')};
+$('prn').onclick=()=>window.print();
+['wed','start','mode'].forEach(i=>$(i).oninput=run);
+$('start').value=ymd(T);$('wed').value=ymd(new Date(T.getTime()+270*DAY));
+run();
+</script>
+</body>
+</html>
